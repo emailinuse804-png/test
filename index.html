@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sentience Core - Generative AI</title>
+    <title>Local Neural Core - Llama 3</title>
     <style>
         :root {
             --bg-color: #0d0d0d;
             --panel-bg: #161618;
             --border-color: #333;
-            --accent-color: #00ff9d; /* Matrix green/Cyberpunk */
-            --accent-dim: #005f3b;
+            --accent-color: #0099ff; /* Blue Core */
+            --accent-dim: #003f6b;
             --text-primary: #e0e0e0;
             --text-secondary: #888;
             --user-msg-bg: #2b303b;
@@ -37,7 +37,7 @@
             height: 100%;
         }
 
-        /* SIDEBAR (The "Brain" Visualization) */
+        /* SIDEBAR */
         .sidebar {
             width: 350px;
             background-color: var(--panel-bg);
@@ -61,13 +61,16 @@
             justify-content: space-between;
         }
 
-        .status-indicator {
+        .status-dot {
             width: 10px;
             height: 10px;
-            background-color: var(--accent-color);
+            background-color: #333;
             border-radius: 50%;
+            transition: background-color 0.3s, box-shadow 0.3s;
+        }
+        .status-dot.active {
+            background-color: var(--accent-color);
             box-shadow: 0 0 10px var(--accent-color);
-            animation: pulse 2s infinite;
         }
 
         .log-container {
@@ -79,13 +82,15 @@
 
         .log-entry {
             margin-bottom: 5px;
-            border-left: 2px solid var(--accent-dim);
+            border-left: 2px solid #333;
             padding-left: 8px;
+            word-wrap: break-word;
         }
         .log-entry.info { border-color: #007acc; }
-        .log-entry.process { border-color: var(--accent-color); color: #aaffd0; }
+        .log-entry.success { border-color: #00ff9d; color: #aaffd0; }
+        .log-entry.error { border-color: #ff3333; color: #ffcccc; }
 
-        .memory-stats {
+        .system-stats {
             padding: 15px;
             border-top: 1px solid var(--border-color);
             background-color: rgba(0,0,0,0.2);
@@ -111,7 +116,7 @@
         }
 
         .message {
-            max-width: 70%;
+            max-width: 80%;
             padding: 15px 20px;
             border-radius: 4px;
             line-height: 1.6;
@@ -148,6 +153,7 @@
             border-top: 1px solid var(--border-color);
             display: flex;
             gap: 15px;
+            align-items: center;
         }
 
         input[type="text"] {
@@ -167,8 +173,14 @@
             border-color: var(--accent-color);
         }
 
+        input[type="text"]:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         button {
             padding: 0 30px;
+            height: 52px;
             background-color: var(--accent-dim);
             color: var(--accent-color);
             border: 1px solid var(--accent-color);
@@ -177,12 +189,44 @@
             letter-spacing: 1px;
             cursor: pointer;
             transition: all 0.2s;
+            white-space: nowrap;
         }
 
-        button:hover {
+        button:hover:not(:disabled) {
             background-color: var(--accent-color);
             color: black;
             box-shadow: 0 0 15px var(--accent-color);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(100%);
+        }
+
+        /* LOADING BAR */
+        .progress-container {
+            display: none; /* Hidden by default */
+            margin-top: 10px;
+            width: 100%;
+        }
+        .progress-label {
+            font-size: 10px;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .progress-bar {
+            height: 4px;
+            background-color: #333;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: var(--accent-color);
+            width: 0%;
+            transition: width 0.2s;
         }
 
         /* SCROLLBARS */
@@ -191,11 +235,6 @@
         ::-webkit-scrollbar-thumb { background: #333; }
         ::-webkit-scrollbar-thumb:hover { background: #555; }
 
-        @keyframes pulse {
-            0% { opacity: 1; box-shadow: 0 0 5px var(--accent-color); }
-            50% { opacity: 0.5; box-shadow: 0 0 0px var(--accent-color); }
-            100% { opacity: 1; box-shadow: 0 0 5px var(--accent-color); }
-        }
         @keyframes slideIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -207,216 +246,214 @@
 <div class="container">
     <div class="sidebar">
         <div class="sidebar-header">
-            <span>Neural Log</span>
-            <div class="status-indicator"></div>
+            <span>Neural Engine</span>
+            <div class="status-dot" id="status-dot"></div>
         </div>
         <div class="log-container" id="sys-log">
-            <div class="log-entry info">System initialized...</div>
-            <div class="log-entry info">Loading memory banks...</div>
+            <div class="log-entry info">System initializing...</div>
+            <div class="log-entry info">Initializing WebGPU environment...</div>
         </div>
-        <div class="memory-stats" id="stats-display">
-            NODES: 0<br>
-            CONNECTIONS: 0<br>
-            EPOCH: 1
+
+        <div class="system-stats">
+            <div style="margin-bottom: 5px; font-weight: bold;">MODEL STATUS</div>
+            <div id="model-status-text" style="color: #888; margin-bottom: 10px;">Offline</div>
+
+            <div class="progress-container" id="progress-container">
+                <div class="progress-label">
+                    <span>DOWNLOADING WEIGHTS</span>
+                    <span id="progress-text">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 15px; font-size: 10px; color: #555;">
+                CORE: Llama-3-8B-Instruct<br>
+                BACKEND: WebLLM / WebGPU<br>
+                LOCAL STORAGE: Active
+            </div>
         </div>
     </div>
 
     <div class="main-chat">
         <div class="chat-window" id="chat-window">
             <div class="message ai">
-                <div class="meta">SENTIENCE CORE v2.0</div>
-                I am ready. I learn from what you say. Teach me about the world, and I will generate new thoughts based on our interaction.
+                <div class="meta">SYSTEM</div>
+                Welcome. I am initializing the Llama-3-8B neural network directly in your browser.
+                <br><br>
+                <strong>NOTE:</strong> The first time you run this, I need to download the model weights (~5GB). This happens automatically. Please wait for the "Ready" status in the sidebar.
+                <br><br>
+                <i>Requires a GPU (NVIDIA, AMD, Apple Silicon) and a modern browser (Chrome/Edge/Brave).</i>
             </div>
         </div>
         <div class="input-area">
-            <input type="text" id="user-input" placeholder="Enter data to train and query the model..." autocomplete="off">
-            <button onclick="handleInput()">TRANSMIT</button>
+            <input type="text" id="user-input" placeholder="Waiting for model to load..." disabled autocomplete="off">
+            <button id="send-btn" onclick="handleInput()" disabled>INITIALIZING</button>
         </div>
     </div>
 </div>
 
-<script>
-/**
- * SENTIENCE CORE - LOCAL GENERATIVE AI
- *
- * This is not a list of pre-written responses.
- * This is a Markov Chain generator (N-Gram model) that builds a probability graph
- * of language based on input data. It constructs sentences word-by-word.
- */
+<script type="module">
+    // Import WebLLM from CDN
+    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-class MarkovAI {
-    constructor(n = 2) {
-        this.n = n; // N-gram size (lookback)
-        this.ngrams = {}; // The "Brain"
-        this.beginnings = []; // Sentence starters
-        this.wordCount = 0;
-        this.sentenceCount = 0;
+    // --- CONFIGURATION ---
+    // Using Llama-3-8B-Instruct (Quantized)
+    // This is a REAL "smart" AI model.
+    const selectedModel = "Llama-3-8B-Instruct-q4f32_1-MLC";
+
+    // --- STATE ---
+    let engine = null;
+    let isGenerating = false;
+
+    // --- DOM ELEMENTS ---
+    const logContainer = document.getElementById('sys-log');
+    const chatWindow = document.getElementById('chat-window');
+    const inputField = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const statusDot = document.getElementById('status-dot');
+    const modelStatusText = document.getElementById('model-status-text');
+    const progressContainer = document.getElementById('progress-container');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+
+    // --- LOGGING SYSTEM ---
+    function log(text, type = "info") {
+        const div = document.createElement('div');
+        div.className = `log-entry ${type}`;
+        div.innerText = `[${new Date().toLocaleTimeString()}] ${text}`;
+        logContainer.prepend(div);
     }
 
-    /**
-     * Train the model with text.
-     * Breaks text into tokens and maps sequences.
-     */
-    train(text) {
-        // Simple tokenization: remove punctuation for the graph (mostly), split by spaces
-        const sentences = text.split(/[.!?\n]+/);
+    // --- CHAT UI ---
+    function addMessage(text, sender) {
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.innerHTML = `
+            <div class="meta">${sender === 'ai' ? 'LLAMA-3' : 'USER'}</div>
+            ${text}
+        `;
+        chatWindow.appendChild(div);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+        return div; // Return for streaming updates
+    }
 
-        sentences.forEach(sentence => {
-            const clean = sentence.trim();
-            if (clean.length === 0) return;
+    // --- INIT ENGINE ---
+    async function initAI() {
+        try {
+            log("Connecting to WebLLM engine...", "info");
 
-            this.sentenceCount++;
-            const tokens = this.tokenize(clean);
+            // Callback to update initialization progress
+            const initProgressCallback = (report) => {
+                console.log(report);
 
-            // Store the start of the sentence for generation
-            if (tokens.length >= this.n) {
-                this.beginnings.push(tokens.slice(0, this.n));
-            }
-
-            // Build N-Grams
-            for (let i = 0; i < tokens.length - this.n; i++) {
-                const gram = tokens.slice(i, i + this.n).join(' ');
-                const next = tokens[i + this.n];
-
-                if (!this.ngrams[gram]) {
-                    this.ngrams[gram] = [];
+                // Show progress bar if downloading
+                if (report.progress < 1) {
+                    progressContainer.style.display = "block";
+                    const pct = Math.round(report.progress * 100);
+                    progressFill.style.width = `${pct}%`;
+                    progressText.innerText = `${pct}%`;
+                    modelStatusText.innerText = report.text;
+                } else {
+                    progressContainer.style.display = "none";
                 }
-                this.ngrams[gram].push(next);
-                this.wordCount++;
-            }
-        });
 
-        updateStats();
-    }
+                // Log significant steps
+                if (report.text.includes("Loading") || report.text.includes("Finish")) {
+                     log(report.text, "info");
+                }
+            };
 
-    tokenize(text) {
-        // Keep it simple: lowercase, remove special chars except basic punctuation holders
-        return text.toLowerCase()
-                   .replace(/[^a-z0-9\s']/g, "")
-                   .split(/\s+/)
-                   .filter(w => w.length > 0);
-    }
+            // Create the engine
+            engine = await webllm.CreateMLCEngine(
+                selectedModel,
+                { initProgressCallback: initProgressCallback }
+            );
 
-    /**
-     * Generate a new sentence.
-     */
-    generate() {
-        if (this.beginnings.length === 0) return "I need more data.";
+            // Success state
+            log("Model loaded and ready.", "success");
+            statusDot.classList.add("active");
+            modelStatusText.innerText = "ONLINE / READY";
+            modelStatusText.style.color = "#00ff9d";
 
-        // Pick a random starting point
-        let currentGram = this.beginnings[Math.floor(Math.random() * this.beginnings.length)];
-        let result = [...currentGram];
+            inputField.disabled = false;
+            inputField.placeholder = "Type a message to chat with Llama-3...";
+            sendBtn.disabled = false;
+            sendBtn.innerText = "SEND";
+            sendBtn.onclick = handleInput; // Ensure binding
 
-        // Walk the chain
-        const maxLen = 30; // Prevent infinite loops
-        for (let i = 0; i < maxLen; i++) {
-            const gramKey = currentGram.join(' ');
-            const possibilities = this.ngrams[gramKey];
-
-            if (!possibilities || possibilities.length === 0) {
-                break;
-            }
-
-            // Weighted random selection (naturally weighted by frequency in array)
-            const nextWord = possibilities[Math.floor(Math.random() * possibilities.length)];
-            result.push(nextWord);
-
-            // Shift the window
-            currentGram = [...currentGram.slice(1), nextWord];
+        } catch (err) {
+            log(`ERROR: ${err.message}`, "error");
+            log("Ensure you have a GPU and WebGPU enabled browser.", "error");
+            addMessage(`<strong>System Error:</strong> ${err.message}<br>Make sure you are using Chrome/Edge v113+ with Hardware Acceleration enabled.`, 'ai');
         }
-
-        // Reconstruct sentence
-        let output = result.join(' ');
-        return output.charAt(0).toUpperCase() + output.slice(1) + ".";
     }
-}
 
-// --- INITIAL TRAINING DATA ---
-// Give it some basic knowledge so it isn't mute.
-const initialCorpus = `
-    Hello there. I am an artificial intelligence. I exist in your browser.
-    Technology is fascinating. I love writing code. The sky is blue.
-    Visual Studio Code is a great editor. Programming is logic and creativity.
-    The future is digital. I can learn from you. Please teach me new things.
-    Artificial intelligence is the study of intelligent agents.
-    Computers process information in binary. The internet connects us all.
-    I do not have feelings but I have data. Data is knowledge.
-    Generative models create new content. I am a generative model.
-    To be or not to be that is the question.
-    All your base are belong to us.
-    I think therefore I am.
-    The quick brown fox jumps over the lazy dog.
-    Space is the final frontier.
-`;
+    // --- HANDLE INPUT ---
+    window.handleInput = async () => {
+        if (!engine || isGenerating) return;
 
-// --- SYSTEM LOGIC ---
+        const text = inputField.value.trim();
+        if (!text) return;
 
-const ai = new MarkovAI(2); // Using Bigrams (2 words lookback)
-const logContainer = document.getElementById('sys-log');
-const chatWindow = document.getElementById('chat-window');
-const inputField = document.getElementById('user-input');
+        // UI Updates
+        inputField.value = '';
+        inputField.disabled = true;
+        sendBtn.disabled = true;
+        isGenerating = true;
+        addMessage(text, 'user');
 
-// Initialize
-log("System Boot...", "info");
-setTimeout(() => {
-    log("Ingesting initial corpus...", "process");
-    ai.train(initialCorpus);
-    log(`Training complete. ${ai.wordCount} nodes created.`, "info");
-}, 500);
+        // Prepare AI response container
+        const aiMsgDiv = addMessage('<span class="cursor">|</span>', 'ai');
+        let fullResponse = "";
 
-function log(text, type = "process") {
-    const div = document.createElement('div');
-    div.className = `log-entry ${type}`;
-    div.innerText = `[${new Date().toLocaleTimeString()}] ${text}`;
-    logContainer.prepend(div);
-}
+        try {
+            log("Processing inference...", "info");
 
-function updateStats() {
-    document.getElementById('stats-display').innerHTML = `
-        NODES: ${Object.keys(ai.ngrams).length}<br>
-        CONNECTIONS: ${ai.wordCount}<br>
-        SENTENCES: ${ai.sentenceCount}
-    `;
-}
+            // Stream the response
+            const chunks = await engine.chat.completions.create({
+                messages: [
+                    { role: "system", content: "You are a helpful, intelligent AI assistant running locally." },
+                    { role: "user", content: text }
+                ],
+                temperature: 0.7,
+                stream: true, // Enable streaming
+            });
 
-function handleInput() {
-    const text = inputField.value.trim();
-    if (!text) return;
+            for await (const chunk of chunks) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                fullResponse += content;
+                // Update UI in real-time
+                aiMsgDiv.innerHTML = `
+                    <div class="meta">LLAMA-3</div>
+                    ${fullResponse.replace(/\n/g, '<br>')}
+                `;
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }
 
-    // 1. Show User Message
-    addMessage(text, 'user');
-    inputField.value = '';
+            log("Response generation complete.", "success");
 
-    // 2. Train on User Input (Real-time learning)
-    log(`Analyzing input: "${text.substring(0, 20)}..."`, "info");
-    ai.train(text);
-    log("Neural pathways updated.", "process");
+        } catch (err) {
+            log(`Inference Error: ${err.message}`, "error");
+            aiMsgDiv.innerHTML += `<br><br><em>[Error: ${err.message}]</em>`;
+        } finally {
+            isGenerating = false;
+            inputField.disabled = false;
+            sendBtn.disabled = false;
+            inputField.focus();
+        }
+    };
 
-    // 3. Generate Response
-    // Add a fake "thinking" delay
-    setTimeout(() => {
-        log("Generating response sequence...", "process");
-        const reply = ai.generate();
-        log(`Generated: "${reply}"`, "info");
-        addMessage(reply, 'ai');
-    }, 600);
-}
+    // Allow Enter key
+    inputField.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !isGenerating && !inputField.disabled) {
+            handleInput();
+        }
+    });
 
-function addMessage(text, sender) {
-    const div = document.createElement('div');
-    div.className = `message ${sender}`;
-    div.innerHTML = `
-        <div class="meta">${sender === 'ai' ? 'CORE' : 'USER'}</div>
-        ${text}
-    `;
-    chatWindow.appendChild(div);
-    chatWindow.scrollTop = chatWindow.scrollHeight;
-}
-
-// Enter key support
-inputField.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleInput();
-});
+    // Start!
+    initAI();
 
 </script>
 
