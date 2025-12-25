@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Neural Core - Llama 3</title>
+    <title>Local Neural Core - Adaptive</title>
     <style>
         :root {
             --bg-color: #0d0d0d;
@@ -179,7 +179,7 @@
         }
 
         button {
-            padding: 0 30px;
+            padding: 0 20px;
             height: 52px;
             background-color: var(--accent-dim);
             color: var(--accent-color);
@@ -202,6 +202,17 @@
             opacity: 0.5;
             cursor: not-allowed;
             filter: grayscale(100%);
+        }
+
+        button.secondary {
+            background-color: transparent;
+            border-color: #555;
+            color: #888;
+        }
+        button.secondary:hover {
+            background-color: #333;
+            color: white;
+            box-shadow: none;
         }
 
         /* LOADING BAR */
@@ -229,6 +240,21 @@
             transition: width 0.2s;
         }
 
+        /* CONTROLS */
+        .controls {
+            margin-bottom: 10px;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            background-color: #0d0d0d;
+            color: var(--text-primary);
+            border: 1px solid #444;
+            border-radius: 4px;
+            outline: none;
+            font-family: var(--code-font);
+        }
+
         /* SCROLLBARS */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #111; }
@@ -251,16 +277,25 @@
         </div>
         <div class="log-container" id="sys-log">
             <div class="log-entry info">System initializing...</div>
-            <div class="log-entry info">Initializing WebGPU environment...</div>
+            <div class="log-entry info">Detecting hardware capabilities...</div>
         </div>
 
         <div class="system-stats">
-            <div style="margin-bottom: 5px; font-weight: bold;">MODEL STATUS</div>
+            <div class="controls">
+                <div style="margin-bottom: 5px; font-weight: bold; font-size: 11px; color: #888;">SELECT MODEL</div>
+                <select id="model-selector">
+                    <option value="Phi-3.5-mini-instruct-q4f16_1-MLC" selected>Phi-3.5 Mini (Efficient, Smart)</option>
+                    <option value="Llama-3.1-8B-Instruct-q4f32_1-MLC">Llama-3.1 8B (High Performance)</option>
+                    <option value="Gemma-2-2b-it-q4f16_1-MLC">Gemma-2 2B (Ultra Low End)</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom: 5px; font-weight: bold;">STATUS</div>
             <div id="model-status-text" style="color: #888; margin-bottom: 10px;">Offline</div>
 
             <div class="progress-container" id="progress-container">
                 <div class="progress-label">
-                    <span>DOWNLOADING WEIGHTS</span>
+                    <span>DOWNLOADING</span>
                     <span id="progress-text">0%</span>
                 </div>
                 <div class="progress-bar">
@@ -269,10 +304,11 @@
             </div>
 
             <div style="margin-top: 15px; font-size: 10px; color: #555;">
-                CORE: Llama-3-8B-Instruct<br>
                 BACKEND: WebLLM / WebGPU<br>
-                LOCAL STORAGE: Active
+                CONTEXT: Active (History On)<br>
+                CACHE: Local Browser Storage
             </div>
+            <button id="load-btn" onclick="initAI()" style="width:100%; margin-top:10px; height: 35px; font-size: 12px;">LOAD MODEL</button>
         </div>
     </div>
 
@@ -280,45 +316,48 @@
         <div class="chat-window" id="chat-window">
             <div class="message ai">
                 <div class="meta">SYSTEM</div>
-                Welcome. I am initializing the Llama-3-8B neural network directly in your browser.
+                Welcome. I am a local Neural Network Interface.
                 <br><br>
-                <strong>NOTE:</strong> The first time you run this, I need to download the model weights (~5GB). This happens automatically. Please wait for the "Ready" status in the sidebar.
-                <br><br>
-                <i>Requires a GPU (NVIDIA, AMD, Apple Silicon) and a modern browser (Chrome/Edge/Brave).</i>
+                <strong>1. Select a Model:</strong>
+                <ul>
+                    <li><strong>Phi-3.5 Mini</strong>: Best balance. Smart & fast. Works on most laptops.</li>
+                    <li><strong>Gemma-2 2B</strong>: Fastest. Works on older devices/phones.</li>
+                    <li><strong>Llama-3.1 8B</strong>: Smartest. Requires a good GPU (6GB+ VRAM).</li>
+                </ul>
+                <strong>2. Click "LOAD MODEL" to begin.</strong> (First run requires download)
             </div>
         </div>
         <div class="input-area">
-            <input type="text" id="user-input" placeholder="Waiting for model to load..." disabled autocomplete="off">
-            <button id="send-btn" onclick="handleInput()" disabled>INITIALIZING</button>
+            <button id="clear-btn" class="secondary" onclick="clearHistory()" disabled style="margin-right: 10px;">CLR</button>
+            <input type="text" id="user-input" placeholder="Load model to begin..." disabled autocomplete="off">
+            <button id="send-btn" onclick="handleInput()" disabled>WAITING</button>
         </div>
     </div>
 </div>
 
 <script type="module">
-    // Import WebLLM from CDN
     import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-
-    // --- CONFIGURATION ---
-    // Using Llama-3-8B-Instruct (Quantized)
-    // This is a REAL "smart" AI model.
-    const selectedModel = "Llama-3-8B-Instruct-q4f32_1-MLC";
 
     // --- STATE ---
     let engine = null;
     let isGenerating = false;
+    let chatHistory = []; // Stores context
 
     // --- DOM ELEMENTS ---
     const logContainer = document.getElementById('sys-log');
     const chatWindow = document.getElementById('chat-window');
     const inputField = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
+    const loadBtn = document.getElementById('load-btn');
+    const clearBtn = document.getElementById('clear-btn');
     const statusDot = document.getElementById('status-dot');
     const modelStatusText = document.getElementById('model-status-text');
     const progressContainer = document.getElementById('progress-container');
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
+    const modelSelector = document.getElementById('model-selector');
 
-    // --- LOGGING SYSTEM ---
+    // --- LOGGING ---
     function log(text, type = "info") {
         const div = document.createElement('div');
         div.className = `log-entry ${type}`;
@@ -326,69 +365,89 @@
         logContainer.prepend(div);
     }
 
+    // --- UTILS ---
+    function escapeHtml(text) {
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     // --- CHAT UI ---
     function addMessage(text, sender) {
         const div = document.createElement('div');
         div.className = `message ${sender}`;
         div.innerHTML = `
-            <div class="meta">${sender === 'ai' ? 'LLAMA-3' : 'USER'}</div>
+            <div class="meta">${sender === 'ai' ? 'AI ASSISTANT' : 'USER'}</div>
             ${text}
         `;
         chatWindow.appendChild(div);
         chatWindow.scrollTop = chatWindow.scrollHeight;
-        return div; // Return for streaming updates
+        return div;
     }
 
     // --- INIT ENGINE ---
-    async function initAI() {
+    window.initAI = async () => {
+        const selectedModel = modelSelector.value;
+        loadBtn.disabled = true;
+        loadBtn.innerText = "LOADING...";
+        modelSelector.disabled = true;
+
         try {
-            log("Connecting to WebLLM engine...", "info");
+            log(`Initializing ${selectedModel}...`, "info");
 
-            // Callback to update initialization progress
             const initProgressCallback = (report) => {
-                console.log(report);
-
-                // Show progress bar if downloading
-                if (report.progress < 1) {
+                // Show progress bar
+                if (report.progress < 1 && report.progress > 0) {
                     progressContainer.style.display = "block";
                     const pct = Math.round(report.progress * 100);
                     progressFill.style.width = `${pct}%`;
                     progressText.innerText = `${pct}%`;
-                    modelStatusText.innerText = report.text;
-                } else {
+                    modelStatusText.innerText = report.text.split(']')[1] || "Downloading...";
+                } else if (report.progress === 1) {
                     progressContainer.style.display = "none";
                 }
 
-                // Log significant steps
-                if (report.text.includes("Loading") || report.text.includes("Finish")) {
-                     log(report.text, "info");
-                }
+                // Log major steps
+                if (report.text.includes("Loading model")) log(report.text, "info");
             };
 
-            // Create the engine
+            // Initialize WebLLM Engine
             engine = await webllm.CreateMLCEngine(
                 selectedModel,
                 { initProgressCallback: initProgressCallback }
             );
 
-            // Success state
-            log("Model loaded and ready.", "success");
+            // Success
+            log("Model loaded successfully.", "success");
             statusDot.classList.add("active");
-            modelStatusText.innerText = "ONLINE / READY";
+            modelStatusText.innerText = "ONLINE";
             modelStatusText.style.color = "#00ff9d";
 
             inputField.disabled = false;
-            inputField.placeholder = "Type a message to chat with Llama-3...";
+            inputField.placeholder = "Type a message...";
             sendBtn.disabled = false;
             sendBtn.innerText = "SEND";
-            sendBtn.onclick = handleInput; // Ensure binding
+            clearBtn.disabled = false; // Enable clear button
+            loadBtn.style.display = "none";
+
+            // Initialize History
+            chatHistory = [
+                { role: "system", content: "You are a helpful, intelligent AI assistant. You answer questions accurately and concisely." }
+            ];
+
+            addMessage("System ready. How can I help you?", "ai");
 
         } catch (err) {
             log(`ERROR: ${err.message}`, "error");
-            log("Ensure you have a GPU and WebGPU enabled browser.", "error");
-            addMessage(`<strong>System Error:</strong> ${err.message}<br>Make sure you are using Chrome/Edge v113+ with Hardware Acceleration enabled.`, 'ai');
+            addMessage(`<strong>Load Failed:</strong> ${err.message}<br>Try selecting a smaller model (Gemma-2 2B) if you are on a low-end device.`, 'ai');
+            loadBtn.disabled = false;
+            loadBtn.innerText = "RETRY / LOAD";
+            modelSelector.disabled = false;
         }
-    }
+    };
 
     // --- HANDLE INPUT ---
     window.handleInput = async () => {
@@ -402,41 +461,45 @@
         inputField.disabled = true;
         sendBtn.disabled = true;
         isGenerating = true;
-        addMessage(text, 'user');
+        // Escape user input before displaying
+        addMessage(escapeHtml(text), 'user');
 
-        // Prepare AI response container
+        // Add User Message to History (raw text)
+        chatHistory.push({ role: "user", content: text });
+
         const aiMsgDiv = addMessage('<span class="cursor">|</span>', 'ai');
         let fullResponse = "";
 
         try {
-            log("Processing inference...", "info");
+            log("Generating response...", "info");
 
-            // Stream the response
             const chunks = await engine.chat.completions.create({
-                messages: [
-                    { role: "system", content: "You are a helpful, intelligent AI assistant running locally." },
-                    { role: "user", content: text }
-                ],
+                messages: chatHistory, // Send full context
                 temperature: 0.7,
-                stream: true, // Enable streaming
+                stream: true,
             });
 
             for await (const chunk of chunks) {
                 const content = chunk.choices[0]?.delta?.content || "";
                 fullResponse += content;
-                // Update UI in real-time
+                // Escape AI response before displaying
+                const escapedResponse = escapeHtml(fullResponse);
                 aiMsgDiv.innerHTML = `
-                    <div class="meta">LLAMA-3</div>
-                    ${fullResponse.replace(/\n/g, '<br>')}
+                    <div class="meta">AI ASSISTANT</div>
+                    ${escapedResponse.replace(/\n/g, '<br>')}
                 `;
                 chatWindow.scrollTop = chatWindow.scrollHeight;
             }
 
-            log("Response generation complete.", "success");
+            // Add AI Response to History (raw text)
+            chatHistory.push({ role: "assistant", content: fullResponse });
+            log("Response complete.", "success");
 
         } catch (err) {
             log(`Inference Error: ${err.message}`, "error");
-            aiMsgDiv.innerHTML += `<br><br><em>[Error: ${err.message}]</em>`;
+            aiMsgDiv.innerHTML += `<br><em>[Error: ${err.message}]</em>`;
+            // Remove the failed user message from history to prevent corrupting context
+            chatHistory.pop();
         } finally {
             isGenerating = false;
             inputField.disabled = false;
@@ -445,15 +508,20 @@
         }
     };
 
-    // Allow Enter key
+    // --- CLEAR HISTORY ---
+    window.clearHistory = () => {
+        chatHistory = [
+             { role: "system", content: "You are a helpful, intelligent AI assistant. You answer questions accurately and concisely." }
+        ];
+        log("Context memory cleared.", "info");
+        addMessage("<em>Conversation history cleared.</em>", "ai");
+    };
+
     inputField.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !isGenerating && !inputField.disabled) {
             handleInput();
         }
     });
-
-    // Start!
-    initAI();
 
 </script>
 
