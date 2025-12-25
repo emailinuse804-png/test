@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local AI</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --chat-bg: #252526;
+            --user-msg-bg: #007acc;
+            --ai-msg-bg: #3c3c3c;
+            --text-color: #d4d4d4;
+            --accent-color: #0e639c;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 600px;
+            height: 80vh;
+            background-color: var(--chat-bg);
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid #444;
+        }
+
+        .chat-header {
+            padding: 15px;
+            background-color: var(--accent-color);
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+        }
+
+        .chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 15px;
+            line-height: 1.4;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .user-message {
+            align-self: flex-end;
+            background-color: var(--user-msg-bg);
+            border-bottom-right-radius: 2px;
+        }
+
+        .ai-message {
+            align-self: flex-start;
+            background-color: var(--ai-msg-bg);
+            border-bottom-left-radius: 2px;
+        }
+
+        .input-area {
+            padding: 15px;
+            background-color: #333;
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #555;
+            background-color: #1e1e1e;
+            color: white;
+            outline: none;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--user-msg-bg);
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: var(--user-msg-bg);
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--accent-color);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #252526;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="chat-header">SYSTEM CORE AI</div>
+    <div class="chat-box" id="chat-box">
+        <div class="message ai-message">System online. I am ready to process your input.</div>
+    </div>
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="Type a message..." autocomplete="off">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<script>
+    // --- THE BRAIN ---
+    // This is a pattern-matching engine (inspired by ELIZA)
+    // It runs entirely in your browser. No API keys needed.
+
+    const memory = {
+        userName: "User",
+        likes: [],
+        lastTopic: ""
+    };
+
+    // Database of patterns and responses
+    // We use Regular Expressions to match what you say.
+    const knowledgeBase = [
+        {
+            patterns: [/\b(hi|hello|hey|greetings)\b/i],
+            responses: [
+                "Hello there. How can I help you today?",
+                "Greetings. System is fully operational.",
+                "Hi. What's on your mind?"
+            ]
+        },
+        {
+            patterns: [/\b(how are you|how is it going)\b/i],
+            responses: [
+                "I am a collection of code, so I do not have feelings, but my processes are running efficiently.",
+                "Operating at 100% efficiency. Thank you for asking.",
+                "I am functioning within normal parameters."
+            ]
+        },
+        {
+            patterns: [/\b(what is your name|who are you)\b/i],
+            responses: [
+                "I am a local AI script running directly in your browser.",
+                "I don't have a name, but you can call me AI.",
+                "I am your coding assistant... sort of."
+            ]
+        },
+        {
+            patterns: [/\b(my name is|i am) (.+)/i],
+            responses: [
+                "Nice to meet you, $2.",
+                "I have updated my memory. Hello, $2."
+            ],
+            action: (match) => { memory.userName = match[2]; }
+        },
+        {
+            patterns: [/\b(what is|what's) (my name)\b/i],
+            responses: [
+                "Your name is stored as " + memory.userName + ".",
+                "You told me your name is " + memory.userName + "."
+            ],
+            dynamic: true
+        },
+        {
+            patterns: [/\b(i like|i love) (.+)/i],
+            responses: [
+                "That is interesting. Why do you like $2?",
+                "I have noted that you enjoy $2.",
+                "$2 seems to be popular."
+            ],
+            action: (match) => { memory.likes.push(match[2]); }
+        },
+        {
+            patterns: [/\b(what is) (.+)/i],
+            responses: [
+                "That is a good question about $2. I am not connected to the internet, so I cannot search for it.",
+                "I am analyzing the concept of $2...",
+                "Tell me more about $2."
+            ]
+        },
+        {
+            patterns: [/\b(because)\b/i],
+            responses: [
+                "Is that the real reason?",
+                "I see. Please go on.",
+                "Does that explain everything?"
+            ]
+        },
+        {
+            patterns: [/\b(joke)\b/i],
+            responses: [
+                "Why did the developer go broke? Because he used up all his cache.",
+                "There are 10 types of people in the world: those who understand binary, and those who don't.",
+                "My humor module is still in beta."
+            ]
+        },
+        {
+            patterns: [/\b(smart|stupid|dumb|intelligent)\b/i],
+            responses: [
+                "I am as smart as the code written for me.",
+                "Intelligence is relative. I can process text very fast.",
+                "I am trying my best to understand you."
+            ]
+        },
+        {
+            patterns: [/\b(help)\b/i],
+            responses: [
+                "I can chat with you, remember your name, or tell you a joke. Just type!",
+                "I am a simple AI. Try saying 'hello' or 'tell me a joke'."
+            ]
+        },
+        {
+            patterns: [/(.*)\?/],
+            responses: [
+                "That is a puzzling question.",
+                "Why do you ask that?",
+                "I am not sure I have the answer to that."
+            ]
+        }
+    ];
+
+    const defaultResponses = [
+        "I'm not sure I understand.",
+        "Could you rephrase that?",
+        "Interesting. Tell me more.",
+        "I am processing your input...",
+        "Go on."
+    ];
+
+    function processInput(input) {
+        // Clean input
+        input = input.trim();
+        if (!input) return "";
+
+        // Iterate through knowledge base to find a match
+        for (const data of knowledgeBase) {
+            for (const pattern of data.patterns) {
+                const match = input.match(pattern);
+                if (match) {
+                    // Execute action if exists (e.g., save memory)
+                    if (data.action) data.action(match);
+
+                    // Pick a random response
+                    let response = data.responses[Math.floor(Math.random() * data.responses.length)];
+
+                    // Handle dynamic responses
+                    if (data.dynamic) {
+                        // Special check for "my name" which relies on the updated memory
+                        if (input.match(/what is (my name)/i)) {
+                             return "Your name is " + memory.userName + ".";
+                        }
+                        // Fallback for other dynamic responses if added later
+                        return response;
+                    }
+
+                    // Replace placeholders like $2 with captured groups
+                    if (response.includes("$2") && match[2]) {
+                        response = response.replace("$2", match[2]);
+                    }
+
+                    return response;
+                }
+            }
+        }
+
+        // If no match, return default
+        return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+    }
+
+    // --- UI LOGIC ---
+
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+
+    function appendMessage(text, sender) {
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message');
+        msgDiv.classList.add(sender === 'user' ? 'user-message' : 'ai-message');
+        msgDiv.textContent = text;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function sendMessage() {
+        const text = userInput.value;
+        if (text.trim() === "") return;
+
+        appendMessage(text, 'user');
+        userInput.value = "";
+
+        // Simulate thinking delay
+        setTimeout(() => {
+            const aiResponse = processInput(text);
+            appendMessage(aiResponse, 'ai');
+        }, 600 + Math.random() * 500);
+    }
+
+    // Allow pressing Enter to send
+    userInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+</script>
+
+</body>
+</html>
